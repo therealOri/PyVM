@@ -4,6 +4,7 @@ vm_core:
 - Make faster.
 - Add more quirks.
 - Tweak settings, paths, timings, etc.
+- Make timing tests more consistent?
 
 
 <br>
