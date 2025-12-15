@@ -8,7 +8,7 @@ __ __
 # Info
 This code and script is foremost just a way for me to learn about VMs and how they can be detected. It is NOT intended to be used maliciously. It is for educational/personal use only. (OR ethical red team tooling maybe but idk if this is good enough for that lol).
 
-I one day I watched a youtube video about a VM hider script: [Source](https://github.com/bRootForceOfficial/vbox_stealth) & [Video](https://www.youtube.com/watch?v=-On6bWFXuM8) and thought to myself.. "How can one still detetct a VM even if everything gets obfuscated and or scrambled". And so I started looking into different ways and methods to detect VMs and now I'm here.
+I one day watched a youtube video about a VM hider script: [Source](https://github.com/bRootForceOfficial/vbox_stealth) & [Video](https://www.youtube.com/watch?v=-On6bWFXuM8) and thought to myself.. "How can one still detetct a VM even if everything gets obfuscated and or scrambled". And so I started looking into different ways and methods to detect VMs and now I'm here.
 
 This is by far not anywhere close to being feature complete and I feel that it can be improved A LOT and tweaked.
 __ __
