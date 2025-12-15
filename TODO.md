@@ -19,4 +19,5 @@ resources:
 - https://github.com/ayoubfaouzi/al-khaser
 - https://github.com/d4rksystem/VBoxCloak
 - https://github.com/bRootForceOfficial/vbox_stealth
+- https://www.youtube.com/watch?v=-On6bWFXuM8
     
