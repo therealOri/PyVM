@@ -22,7 +22,7 @@ try:
 except Exception:
     psutil = None
 
-# Windows-only registry
+# For Windows-only registry stuff
 if platform.system() == "Windows":
     try:
         import winreg
