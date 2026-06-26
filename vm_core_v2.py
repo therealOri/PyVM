@@ -1,5 +1,5 @@
 """
-vm_core.py v2.0 - Enhanced VM Detection Library
+vm_core.py v2.0 | Enhanced VM Detection Library
 
 Core VM detection library (importable)
 Targets Python 3.12+
@@ -532,9 +532,27 @@ def gather_bios_system(art: ArtifactCollection) -> None:
     """Collect BIOS/SMBIOS vendor/product information."""
     system = platform.system()
     if system == "Linux":
+        dmi_base = "/sys/class/dmi/id/"
+        can_read_full_dmi = False
+
+        if os.path.isdir(dmi_base):
+            try:
+                # Test read permission on protected files
+                test_files = [
+                    os.path.join(dmi_base, "sys_vendor"),
+                    os.path.join(dmi_base, "product_name"),
+                    os.path.join(dmi_base, "board_serial")
+                ]
+                can_read_full_dmi = all(os.access(f, os.R_OK) for f in test_files)
+
+                if not can_read_full_dmi:
+                    art.notes.append("⚠ RUNNING WITHOUT ROOT | some artifacts unavailable")
+            except Exception:
+                art.notes.append("⚠ PRIVILEGE CHECK FAILED")
+
         if shutil_which("dmidecode"):
-            man = run(["dmidecode", "-s", "system-manufacturer"]) or ""
-            prod = run(["dmidecode", "-s", "system-product-name"]) or ""
+            man = run(["sudo", "-n", "dmidecode", "-s", "system-manufacturer"])
+            prod = run(["sudo", "-n", "dmidecode", "-s", "system-product-name"])
             art.bios_vendor = man.strip() or art.bios_vendor
             art.system_product = prod.strip() or art.system_product
         else:
@@ -572,6 +590,8 @@ def gather_bios_system(art: ArtifactCollection) -> None:
             art.bios_brand = "Parallels"
         elif "xen" in b:
             art.bios_brand = "Xen"
+        else:
+            art.bios_brand = "Legit/Not_VM_Brand"
 
 
 def gather_processes(art: ArtifactCollection) -> None:
@@ -1794,6 +1814,7 @@ __all__ = [
     "gather_processes", "detect_container_runtime", "probe_cloud_metadata",
     "VM_PCI_VENDORS", "MAC_PREFIXES", "VM_CPUID_SIGS", "CLOUD_METADATA_ENDPOINTS"
 ]
+
 
 
 # ============================================================
