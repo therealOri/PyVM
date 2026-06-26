@@ -17,6 +17,7 @@ import re
 import socket
 import time
 import threading
+import ctypes
 from typing import Dict, List, Set, Optional, Any, Callable, Tuple
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -1001,7 +1002,7 @@ class Detector:
             ("disk", gather_disk_vendors),
             ("gpu", gather_gpu_detection),
             ("filesystem", gather_filesystem_artifacts_extended),
-            ("quarks", gather_hardware_quirks),
+            ("quirks", gather_hardware_quirks),
             ("cloud", gather_cloud_probing),
             ("uptime", gather_uptime_check),
             ("container", gather_container_detection),
@@ -1423,7 +1424,7 @@ class Detector:
             classification = "Likely VM Environment"
         elif best_score >= 30:
             classification = "Possible VM Indicators"
-        elif hardcoded_signals >= 2:
+        elif hardened_signals >= 2:
             classification = "Hardened/Stylized Virtual Environment"
         elif best_score < 30 and art.direct_cpuid_available and art.hypervisor_flag:
             classification = "Hidden VM (Direct CPUID Confirms)"
@@ -1631,6 +1632,50 @@ def sandbox_checks(art: ArtifactCollection) -> Dict[str, Any]:
             out["confidence"] = "LOW"
     
     return out
+
+
+
+def enhanced_behavior_scoring(art: ArtifactCollection, behavior_signals: List[str]) -> int:
+    """Aggregate additional behavioral signals for classification enhancement."""
+    additional_signals = 0
+
+    if art.cache_behavior and art.cache_behavior.get("suspicious"):
+        additional_signals += 1
+        behavior_signals.append("Cache timing patterns suggest VM")
+
+    if art.instruction_timing and art.instruction_timing.get("too_consistent"):
+        additional_signals += 1
+        behavior_signals.append("Instruction timing too consistent (VM-like)")
+
+    if art.memory_patterns and art.memory_patterns.get("exact_vm_size"):
+        additional_signals += 1
+        behavior_signals.append(f"Memory size matches common VM default ({art.memory_patterns.get('total_gb'):.1f} GB)")
+
+    if art.filesystem_artifacts:
+        additional_signals += 1
+        behavior_signals.append(f"VM filesystem artifacts: {len(art.filesystem_artifacts)} found")
+
+    if art.hardware_quirks:
+        for quirk in art.hardware_quirks:
+            if quirk != "no_battery_detected":  # Ignore laptops
+                additional_signals += 1
+                behavior_signals.append(f"Hardware quirk: {quirk}")
+
+    if art.network_latency and art.network_latency.get("suspiciously_fast"):
+        additional_signals += 1
+        behavior_signals.append("Network latency suspiciously fast")
+
+    if art.gpu_info and art.gpu_info.get("vm_gpu"):
+        additional_signals += 1
+        behavior_signals.append("Virtualized GPU detected")
+
+    if art.uptime and art.uptime.get("suspiciously_recent"):
+        additional_signals += 1
+        behavior_signals.append(f"System uptime very recent ({art.uptime.get('hours'):.1f} hours)")
+
+    return additional_signals
+
+
 
 
 # ============================================================
