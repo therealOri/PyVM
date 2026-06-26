@@ -528,41 +528,60 @@ def gather_acpi_tables(art: ArtifactCollection) -> None:
                 pass
 
 
+
+
+
+
+
+def read_dmi_from_sysfs(art: ArtifactCollection) -> None:
+    """Fallback reader for DMI data from /sys/class/dmi/id."""
+    base = "/sys/class/dmi/id/"
+    if not os.path.isdir(base):
+        return
+
+    # Read available files safely
+    sv = _safe_read_text(os.path.join(base, "sys_vendor")) or ""
+    pn = _safe_read_text(os.path.join(base, "product_name")) or ""
+    brn = _safe_read_text(os.path.join(base, "board_vendor")) or ""
+
+    # Update only if we actually got something new
+    if sv.strip():
+        art.bios_vendor = sv.strip()
+    if pn.strip():
+        art.system_product = pn.strip()
+    elif brn.strip():
+        # Product name sometimes absent, try board vendor instead
+        art.system_product = brn.strip()
+
+
+
 def gather_bios_system(art: ArtifactCollection) -> None:
     """Collect BIOS/SMBIOS vendor/product information."""
+    is_root = os.geteuid() == 0
     system = platform.system()
     if system == "Linux":
-        dmi_base = "/sys/class/dmi/id/"
-        can_read_full_dmi = False
-
-        if os.path.isdir(dmi_base):
-            try:
-                # Test read permission on protected files
-                test_files = [
-                    os.path.join(dmi_base, "sys_vendor"),
-                    os.path.join(dmi_base, "product_name"),
-                    os.path.join(dmi_base, "board_serial")
-                ]
-                can_read_full_dmi = all(os.access(f, os.R_OK) for f in test_files)
-
-                if not can_read_full_dmi:
-                    art.notes.append("⚠ RUNNING WITHOUT ROOT | some artifacts unavailable")
-            except Exception:
-                art.notes.append("⚠ PRIVILEGE CHECK FAILED")
-
+        # Step 1: Try privileged dmidecode
         if shutil_which("dmidecode"):
-            man = run(["sudo", "-n", "dmidecode", "-s", "system-manufacturer"])
-            prod = run(["sudo", "-n", "dmidecode", "-s", "system-product-name"])
-            art.bios_vendor = man.strip() or art.bios_vendor
-            art.system_product = prod.strip() or art.system_product
+            cmd_prepend = ["sudo", "-n"] if not is_root else []
+            man = run(cmd_prepend + ["dmidecode", "-s", "system-manufacturer"])
+            prod = run(cmd_prepend + ["dmidecode", "-s", "system-product-name"])
+
+            found_via_sudo = False
+            if man.strip():
+                art.bios_vendor = man.strip()
+                found_via_sudo = True
+            if prod.strip():
+                art.system_product = prod.strip()
+                found_via_sudo = True
+
+            # Step 2: If sudo failed/is unavailable, fallback to sysfs
+            if not found_via_sudo:
+                read_dmi_from_sysfs(art)
+                if not art.bios_vendor and not art.system_product:
+                    art.notes.append("ℹ Running without root + sudo unavailable")
         else:
-            base = "/sys/class/dmi/id"
-            if os.path.isdir(base):
-                sv = _safe_read_text(os.path.join(base, "sys_vendor")) or ""
-                pn = _safe_read_text(os.path.join(base, "product_name")) or ""
-                brn = _safe_read_text(os.path.join(base, "board_vendor")) or ""
-                art.bios_vendor = sv.strip() or brn.strip() or art.bios_vendor
-                art.system_product = pn.strip() or art.system_product
+            # Tool missing? Straight to sysfs
+            read_dmi_from_sysfs(art)
 
     elif system == "Windows":
         out = run(["wmic", "bios", "get", "Manufacturer", "/value"])
@@ -1814,7 +1833,6 @@ __all__ = [
     "gather_processes", "detect_container_runtime", "probe_cloud_metadata",
     "VM_PCI_VENDORS", "MAC_PREFIXES", "VM_CPUID_SIGS", "CLOUD_METADATA_ENDPOINTS"
 ]
-
 
 
 # ============================================================
