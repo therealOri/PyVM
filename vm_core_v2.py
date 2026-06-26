@@ -4,7 +4,7 @@ vm_core.py v2.0 - Enhanced VM Detection Library
 Core VM detection library (importable)
 Targets Python 3.12+
 
-__Author__ = therealOri (enhanced version)
+__Author__ = therealOri
 __Enhancements__ = CPUID access, cloud probing, container detection, parallel gathering, tiered scoring
 """
 
@@ -33,7 +33,7 @@ try:
     HAS_REQUESTS = True
 except ImportError:
     HAS_REQUESTS = False
-    
+
 # For Windows-only registry stuff
 if platform.system() == "Windows":
     try:
@@ -43,10 +43,9 @@ if platform.system() == "Windows":
 
 
 # ============================================================
-# OPTIONAL: Direct CPUID Module Setup
+# Direct CPUID Module Setup
 # ============================================================
-# Uncomment if you compile libcpuid.so (Linux) or cpuid.dll (Windows)
-# See COMPILATION INSTRUCTIONS section at bottom of this file
+# Comment out if you don't want to use the compiled libcpuid.so (Linux) or cpuid.dll (Windows) file. -> [compiled from cpuid.c]
 
 try:
     _CPUID_LIB_LOADED = False
@@ -54,7 +53,7 @@ try:
         _CPUID_PATH = "libcpuid.so"
         if os.path.exists(_CPUID_PATH):
             _CPUID_LIB = ctypes.CDLL(os.path.abspath(_CPUID_PATH))
-            _CPUID_LIB.cpuid.argtypes = [ctypes.c_uint32, ctypes.c_uint32, 
+            _CPUID_LIB.cpuid.argtypes = [ctypes.c_uint32, ctypes.c_uint32,
                                          ctypes.POINTER(ctypes.c_uint32)]
             _CPUID_LIB_loaded = True
     elif platform.system() == "Windows":
@@ -77,7 +76,7 @@ def get_direct_cpuid(eax: int, ecx: int = 0) -> Tuple[int, int, int, int]:
     Returns (eax, ebx, ecx, edx) values.
     """
     global _CPUID_LIB_loaded
-    
+
     if globals().get('_CPUID_LIB_loaded', False):
         out = (ctypes.c_uint32 * 4)()
         try:
@@ -85,7 +84,7 @@ def get_direct_cpuid(eax: int, ecx: int = 0) -> Tuple[int, int, int, int]:
             return (out[0], out[1], out[2], out[3])
         except Exception:
             pass
-    
+
     # Fallback: parse from lscpu / wmic
     if platform.system() == "Linux":
         out = run(["lscpu"])
@@ -177,7 +176,7 @@ CPU_THREAD_DATABASE: Dict[str, Dict[str, Any]] = {
     "Intel Core i9-13900K": {"cores": 8, "threads": 16, "ratio_max": 2.0},
     "Intel Core i7-12700K": {"cores": 12, "threads": 20, "ratio_max": 1.67},
     "AMD Ryzen 9 7950X": {"cores": 16, "threads": 32, "ratio_max": 2.0},
-    # Add more as needed - can auto-fetch online if desired
+    # Add more as needed, can auto-fetch online if desired
 }
 
 CLOUD_METADATA_ENDPOINTS = {
@@ -214,7 +213,7 @@ CLOUD_METADATA_ENDPOINTS = {
 
 def run(cmd: List[str], *, text: bool = True, timeout: float = 5.0) -> str:
     try:
-        return subprocess.check_output(cmd, stderr=subprocess.DEVNULL, 
+        return subprocess.check_output(cmd, stderr=subprocess.DEVNULL,
                                        text=text, timeout=timeout) or ""
     except Exception:
         return ""
@@ -266,7 +265,7 @@ class ArtifactCollection:
         self.mac_prefixes: List[str] = []
         self.disk_vendors: List[str] = []
         self.notes: List[str] = []
-        
+
         # Behavioral data
         self.interrupt_behavior: Dict[str, Any] = {}
         self.entropy_behavior: Dict[str, Any] = {}
@@ -279,7 +278,7 @@ class ArtifactCollection:
         self.network_latency: Dict[str, Any] = {}
         self.gpu_info: Dict[str, Any] = {}
         self.uptime: Dict[str, Any] = {}
-        
+
         # NEW fields v2.0
         self.container_runtime: Optional[str] = None
         self.cloud_provider: Optional[str] = None
@@ -338,7 +337,7 @@ def gather_interrupt_behavior(art: ArtifactCollection) -> None:
 
     jitter = max(deltas) - min(deltas)
     avg_jitter = sum(deltas) / len(deltas) if deltas else 0
-    
+
     art.interrupt_behavior = {
         "samples": len(deltas),
         "jitter": jitter,
@@ -358,13 +357,14 @@ def gather_entropy_behavior(art: ArtifactCollection) -> None:
 
     variance = max(timings) - min(timings)
     median_time = sorted(timings)[len(timings)//2]
-    
+
     art.entropy_behavior = {
         "samples": len(timings),
         "variance_ns": variance,
         "median_ns": median_time,
-        "low_variance": variance < 1e5,  # nanosecond scale
+        "low_variance": variance < 1000000,  # ← CHANGED: was 1e5
         "high_outliers": sum(1 for t in timings if t > median_time * 3),
+        "variance_ratio": variance / median_time if median_time > 0 else 0,
     }
 
 
@@ -384,14 +384,14 @@ def gather_cpu_topology(art: ArtifactCollection) -> None:
             # Changed: 6× instead of 4× threshold
             topo["ratio"] = ratio
             topo["suspicious_ratio"] = ratio > 6
-        
+
         # Check for odd core/thread counts
         logical = topo.get("logical")
         if logical and logical % 2 != 0:
             topo["odd_thread_count"] = True
         else:
             topo["odd_thread_count"] = False
-            
+
     except Exception:
         pass
 
@@ -401,19 +401,19 @@ def gather_cpu_topology(art: ArtifactCollection) -> None:
 def gather_cpu_vendor_with_cpuid(art: ArtifactCollection) -> None:
     """Attempt direct CPUID access for unforgeable hypervisor detection."""
     art.direct_cpuid_available = _CPUID_LIB_loaded if '_CPUID_LIB_loaded' in globals() else False
-    
+
     # First try direct CPUID
     if art.direct_cpuid_available:
         # Leaf 0: Vendor string
         leaf0 = get_direct_cpuid(0)
         art.cpuid_leaf_0 = leaf0
-        
+
         # Leaf 0x1: Feature flags
         leaf1 = get_direct_cpuid(1)
         eax, ebx, ecx, edx = leaf1
         # ECX bit 31 = Hypervisor present
         art.hypervisor_flag = bool(ecx & (1 << 31))
-        
+
         # Leaf 0x40000000+: Hypervisor vendor strings
         hyp_sig_raw = get_direct_cpuid(0x40000000)
         if hyp_sig_raw[0] >= 0x40000100:  # Extended leaves available
@@ -427,7 +427,7 @@ def gather_cpu_vendor_with_cpuid(art: ArtifactCollection) -> None:
                 if sig_str and sig_str != '':
                     art.cpuid_signature = sig_str
                     break
-    
+
     # Fallback to existing methods
     if platform.system() == "Linux":
         txt = _safe_read_text("/proc/cpuinfo") or ""
@@ -445,7 +445,7 @@ def gather_cpu_vendor_with_cpuid(art: ArtifactCollection) -> None:
         lines = [l.strip() for l in out.splitlines() if l.strip()]
         if len(lines) >= 2:
             art.cpu_vendor = lines[1]
-        hv = run(["powershell", "-NoProfile", "-Command", 
+        hv = run(["powershell", "-NoProfile", "-Command",
                   "(Get-CimInstance -ClassName Win32_ComputerSystem).HypervisorPresent"])
         if hv and hv.strip().lower() in ("true", "1"):
             art.hypervisor_flag = True
@@ -456,7 +456,7 @@ def gather_pci(art: ArtifactCollection) -> None:
     vendors: Set[str] = set()
     devices: Set[str] = set()
     system = platform.system()
-    
+
     if system == "Linux":
         base = "/sys/bus/pci/devices/"
         if os.path.isdir(base):
@@ -480,7 +480,7 @@ def gather_pci(art: ArtifactCollection) -> None:
                 if m:
                     vendors.add("0x" + m.group(1).upper())
                     devices.add("0x" + m.group(2).upper())
-                    
+
     elif system == "Windows" and winreg:
         roots = [r"SYSTEM\CurrentControlSet\Enum\PCI", r"SYSTEM\ControlSet001\Enum\PCI"]
         ven_re = re.compile(r"VEN_([0-9A-Fa-f]{4})", re.I)
@@ -504,7 +504,7 @@ def gather_pci(art: ArtifactCollection) -> None:
                 continue
             except Exception:
                 continue
-                
+
     art.pci_vendors = sorted(vendors)
     art.pci_devices = sorted(devices)
 
@@ -657,63 +657,69 @@ def gather_disk_vendors(art: ArtifactCollection) -> None:
 
 
 def gather_container_detection(art: ArtifactCollection) -> None:
-    """NEW: Detect container runtime environments."""
+    """STRONG EVIDENCE ONLY | Reduced false positives on bare metal."""
     indicators = []
     runtime = None
-    
-    # /.dockerenv marker
-    if os.path.exists("/.dockerenv"):
-        indicators.append("docker_marker_file")
-        runtime = "Docker"
-    
-    # Container environment variable
-    if os.environ.get("CONTAINER_ID") or os.environ.get("HOSTNAME") and len(os.environ.get("HOSTNAME", "")) == 12:
-        # Kubernetes often sets hostname to pod UID (12 hex chars)
-        host = os.environ.get("HOSTNAME", "")
-        if re.match(r'^[0-9a-f]{12}$', host):
-            indicators.append("kubernetes_pod_hostname")
-            runtime = runtime or "Kubernetes"
-    
-    # cgroup inspection
+
+    # Condition 1: /.dockerenv file exists (rare but very strong signal)
+    has_docker_env = os.path.exists("/.dockerenv")
+
+    # Condition 2: Look for actual container ID hashes (64 char hex) in cgroups
     cgroup_txt = _safe_read_text("/proc/self/cgroup")
+    cgroup_matches = False
+
     if cgroup_txt:
-        cgroup_lower = cgroup_txt.lower()
-        if "docker-" in cgroup_lower:
-            indicators.append("cgroup_docker_path")
-            runtime = runtime or "Docker"
-        elif "kubepods" in cgroup_lower:
-            indicators.append("cgroup_kubernetes_path")
-            runtime = runtime or "Kubernetes"
-        elif "containerd" in cgroup_lower:
-            indicators.append("cgroup_containerd")
-            runtime = runtime or "Containerd"
-        elif "/runc/" in cgroup_lower:
-            indicators.append("cgroup_runc")
-            runtime = runtime or "runc"
-    
-    # Runtime sockets
-    for socket_path in ["/run/docker.sock", "/var/run/docker.sock"]:
-        if os.path.exists(socket_path):
-            indicators.append("docker_socket_present")
-            runtime = runtime or "Docker"
-    
+        # Match Docker/containerd-style IDs (64+ hex chars before slash)
+        import re
+        container_id_pattern = re.compile(r'/([a-f0-9]{64}/|container=)')
+        if container_id_pattern.search(cgroup_txt):
+            cgroup_matches = True
+
+        # Also check for systemd slice patterns that contain scope/session
+        if re.search(r'/(systemd-)?scope\.service|session', cgroup_txt.lower()):
+            cgroup_matches = True
+
+        # Or explicit docker path patterns
+        if "/docker/" in cgroup_txt or "/containers/" in cgroup_txt:
+            cgroup_matches = True
+
+    # Condition 3: Docker socket actually exists
+    docker_socket_exists = any(os.path.exists(p) for p in ["/run/docker.sock", "/var/run/docker.sock"])
+
+    # STRONG EVIDENCE REQUIREMENT | Need multiple signals together
+    if has_docker_env and (cgroup_matches or docker_socket_exists):
+        indicators.append("strong_container_evidence")
+        runtime = "Docker"
+    elif docker_socket_exists and has_docker_env:
+        indicators.append("socket_and_marker_present")
+        runtime = "Docker"
+    else:
+        # Store weak signals but DON'T classify as container
+        art.container_has_marker_file = has_docker_env
+        art.container_cgroup_match = cgroup_matches
+        if docker_socket_exists:
+            art.docker_socket_found = True
+            art.notes.append("DOCKER_SOCKET_DETECTED_NO_DOCKERENV")
+        runtime = None
+
     art.container_runtime = runtime
-    art.notes.extend(indicators) if indicators else None
+    if indicators:
+        art.notes.extend(indicators)
 
 
 def gather_cloud_probing(art: ArtifactCollection) -> None:
-    """NEW: Probe cloud provider metadata endpoints (non-destructive)."""
+    """Probe cloud provider metadata endpoints (non-destructive)."""
     results = {}
-    
+
     for provider, config in CLOUD_METADATA_ENDPOINTS.items():
         url = config["url"]
         timeout_ms = config["timeout_ms"]
         headers = config.get("headers", {})
-        
+
         reachable = False
         latency_ms = None
         response_status = None
-        
+
         try:
             if HAS_REQUESTS:
                 t0 = time.perf_counter()
@@ -725,35 +731,35 @@ def gather_cloud_probing(art: ArtifactCollection) -> None:
                 # Socket-based probe fallback
                 parsed_url = url.replace("http://", "").split("/")
                 host = parsed_url[0]
-                
+
                 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 s.settimeout(timeout_ms / 1000)
                 t0 = time.perf_counter()
-                
+
                 conn_result = s.connect_ex((host, 80))
                 latency_ms = (time.perf_counter() - t0) * 1000
-                
+
                 if conn_result == 0:
                     reachable = True
                     response_status = 200
                 else:
                     response_status = conn_result
-                    
+
                 s.close()
-                
+
         except Exception as e:
             response_status = str(e)
-        
+
         results[provider] = {
             "reachable": reachable,
             "latency_ms": latency_ms,
             "response_status": response_status,
         }
-        
+
         if reachable:
             art.cloud_provider = provider
             break
-    
+
     art.cloud_metadata_reachable = results
 
 
@@ -761,59 +767,60 @@ def gather_instruction_timing_advanced(art: ArtifactCollection) -> None:
     """Improved timing measurement focusing on privileged op overhead."""
     samples_per_batch = 100
     num_batches = 10
-    
+
     batch_times = []
-    
+
     for _batch_idx in range(num_batches):
         batch_start = time.perf_counter_ns()
-        
+
         # Multiple iterations increase hypervisor overhead signal
         for _i in range(samples_per_batch):
             # Use a loop that triggers different behaviors
             _ = sum(range(50))
-            
+
         batch_end = time.perf_counter_ns()
         batch_times.append(batch_end - batch_start)
-    
+
     avg_time = sum(batch_times) / len(batch_times)
     std_dev = (sum((t - avg_time)**2 for t in batch_times) / len(batch_times)) ** 0.5
-    
+
     # Real bare metal batches: ~200-500μs per batch
     # Hypervisor batches: ~2-10ms per batch
     med_time = sorted(batch_times)[len(batch_times)//2]
-    
+
     art.instruction_timing = {
         "samples_total": samples_per_batch * num_batches,
         "batch_avg_us": avg_time / 1000,
         "batch_median_us": med_time / 1000,
         "batch_std_dev_us": std_dev / 1000,
-        "suspicious_timing": med_time > 1000,  # >1ms per batch suggests VM
+        "suspicious_timing": med_time > 5000,  # >1ms per batch suggests VM
         "timing_variance_high": std_dev / avg_time > 0.5 if avg_time > 0 else False,
+        "baseline_comparison": f"{med_time / 1000:.2f} μs/batch"  # Diagnostic
     }
 
 
 def gather_nested_virtualization(art: ArtifactCollection) -> None:
-    """NEW: Detect signs of nested virtualization layers."""
+    """Detect signs of nested virtualization layers."""
     signals = []
-    
+
     # Check if VT-x/AMD-V advertised inside guest (outer layer exists)
     if platform.system() == "Linux":
         cpu_flags = _safe_read_text("/proc/cpuinfo") or ""
         if "vmx" in cpu_flags.lower() or "svm" in cpu_flags.lower():
             # CPU has virtualization extensions exposed TO guest
             signals.append("virtualization_extensions_visible_in_guest")
-    
+
     # High instruction timing variance suggests nesting overhead
     if art.instruction_timing.get("timing_variance_high"):
         signals.append("high_timing_variance_nested_signal")
-    
+
     # VirtIO devices indicate virtual infrastructure underneath
     virtio_indicators = ["virtio", "1af4"]
     for vendor in art.pci_vendors or []:
         if any(v in vendor.lower() for v in virtio_indicators):
             signals.append("virtio_device_detected")
             break
-    
+
     art.nested_virtualization = {
         "likely_nested": len(signals) >= 2,
         "signal_count": len(signals),
@@ -824,7 +831,7 @@ def gather_nested_virtualization(art: ArtifactCollection) -> None:
 def gather_hardware_quirks(art: ArtifactCollection) -> None:
     """Identify hardware characteristics typical of physical vs virtual systems."""
     quirks = []
-    
+
     # Battery check
     if platform.system() == "Windows":
         out = run(["powershell", "-NoProfile", "-Command",
@@ -839,14 +846,14 @@ def gather_hardware_quirks(art: ArtifactCollection) -> None:
             battery_status = "absent_desktop_or_vm"
     else:
         battery_status = "unknown"
-    
+
     # SMBIOS serial validation
     if platform.system() == "Linux" and shutil_which("dmidecode"):
         serial = run(["dmidecode", "-s", "system-serial-number"]).strip()
         dummy_serials = ["0", "None", "To Be Filled By O.E.M.", "Default string", "Unknown"]
         if serial in dummy_serials:
             quirks.append(f"dummy_serial:{serial}")
-    
+
     # RAM configuration analysis
     if psutil:
         mem = psutil.virtual_memory()
@@ -856,18 +863,18 @@ def gather_hardware_quirks(art: ArtifactCollection) -> None:
         closest = min(rounded_sizes, key=lambda x: abs(total_gb - x))
         if abs(total_gb - closest) < 0.3:
             quirks.append(f"rounded_ram_size:{total_gb:.1f}GB")
-    
+
     # Boot loader identification
     if platform.system() == "Linux":
         grub_cfg = _safe_read_text("/boot/grub/grub.cfg") or ""
         if "kvm" in grub_cfg.lower() or "qemu" in grub_cfg.lower():
             quirks.append("grub_config_reference")
-    
+
     art.hardware_quirks = quirks
 
 
 def gather_uptime_check(art: ArtifactCollection) -> None:
-    """Calculate system uptime - low uptime may indicate sandbox/analysis env."""
+    """Calculate system uptime, low uptime may indicate sandbox/analysis env."""
     try:
         if psutil:
             boot_time = psutil.boot_time()
@@ -888,7 +895,7 @@ def gather_gpu_detection(art: ArtifactCollection) -> None:
     """Detect GPU drivers and virtual graphics adapters."""
     gpu_info = []
     vm_gpu_detected = False
-    
+
     if platform.system() == "Windows":
         out = run(["wmic", "path", "win32_VideoController", "get", "name"])
         for line in out.splitlines()[1:]:
@@ -908,11 +915,11 @@ def gather_gpu_detection(art: ArtifactCollection) -> None:
                     vm_gpu_keywords = ["qxl", "vmsvga", "virtio", "vboxvideo", "cirrus"]
                     if any(kw in line.lower() for kw in vm_gpu_keywords):
                         vm_gpu_detected = True
-                        
+
                     # Also detect NVIDIA/AMD passthrough scenarios
                     if "nvidia" in line.lower() or "amd" in line.lower():
                         gpu_info.append("GPU_passthrough_candidate:" + line[:50])
-    
+
     art.gpu_info = {
         "adapters": gpu_info,
         "vm_gpu": vm_gpu_detected,
@@ -923,7 +930,7 @@ def gather_gpu_detection(art: ArtifactCollection) -> None:
 def gather_filesystem_artifacts_extended(art: ArtifactCollection) -> None:
     """Extended filesystem checks for VM artifacts."""
     vm_paths = []
-    
+
     # Non exhaustive list, expandable
     if platform.system() == "Windows":
         check_paths = [
@@ -944,18 +951,17 @@ def gather_filesystem_artifacts_extended(art: ArtifactCollection) -> None:
             "/dev/vdc",
             "/dev/xvda",
             "/dev/xvdb",
-            "/dev/nvme0n1",  # NVMe common in cloud KVM instances
             "/sys/bus/vmbus",
             "/proc/xen",
             "/proc/vz",
             "/var/lib/qemu-agent",
             "/opt/google/chrome/browser/.google/update-client",
         ]
-    
+
     for path in check_paths:
         if os.path.exists(path):
             vm_paths.append(path)
-    
+
     art.filesystem_artifacts = vm_paths
 
 
@@ -966,7 +972,10 @@ def gather_filesystem_artifacts_extended(art: ArtifactCollection) -> None:
 class Detector:
     def __init__(self):
         self.art = ArtifactCollection()
-        
+        self.container_has_marker_file = False
+        self.container_cgroup_match = False
+        self.docker_socket_found: bool = False
+
     def gather_all_sequential(self) -> ArtifactCollection:
         """Original sequential method."""
         gather_cpu_vendor_with_cpuid(self.art)
@@ -988,12 +997,12 @@ class Detector:
         gather_gpu_detection(self.art)
         gather_uptime_check(self.art)
         gather_nested_virtualization(self.art)
-        
+
         self._normalize()
         return self.art
-    
+
     def gather_all_parallel(self, worker_threads: int = 6) -> ArtifactCollection:
-        """NEW: Concurrent gatherer execution for performance."""
+        """Concurrent gatherer execution for performance."""
         # Independent gatherers (parallel-safe)
         parallel_gatherers = [
             ("pci", gather_pci),
@@ -1007,12 +1016,12 @@ class Detector:
             ("uptime", gather_uptime_check),
             ("container", gather_container_detection),
         ]
-        
+
         with ThreadPoolExecutor(max_workers=worker_threads) as executor:
             futures = {executor.submit(g, self.art): name for name, g in parallel_gatherers}
             completed = []
             failed = []
-            
+
             for future in as_completed(futures):
                 name = futures[future]
                 try:
@@ -1020,7 +1029,7 @@ class Detector:
                     completed.append(name)
                 except Exception as e:
                     failed.append((name, str(e)))
-        
+
         # Sequential-dependent gatherers stay sequential (they need earlier data)
         gather_cpu_vendor_with_cpuid(self.art)
         gather_bios_system(self.art)
@@ -1031,15 +1040,15 @@ class Detector:
         gather_instruction_timing_advanced(self.art)
         gather_memory_patterns(self.art)
         gather_nested_virtualization(self.art)
-        
+
         if failed:
             self.art.notes.append(f"Gatherers failed: {len(failed)}")
             for name, err in failed:
                 self.art.notes.append(f"  - {name}: {err[:50]}")
-        
+
         self._normalize()
         return self.art
-    
+
     def _normalize(self) -> None:
         """Sanitize and normalize collected artifact data."""
         try:
@@ -1055,8 +1064,8 @@ class Detector:
         self.art.disk_vendors = sorted({d.lower() for d in (self.art.disk_vendors or []) if d})
 
 
-    def score(self, art: Optional[ArtifactCollection] = None, 
-              sandbox: Optional[Dict[str, Any]] = None, 
+    def score(self, art: Optional[ArtifactCollection] = None,
+              sandbox: Optional[Dict[str, Any]] = None,
               explain: bool = False) -> Dict[str, Any]:
         """
         Calculate VM probability scores using tiered confidence weighting.
@@ -1064,21 +1073,21 @@ class Detector:
         """
         if art is None:
             art = self.art
-        
+
         platforms = list(VM_PCI_VENDORS.keys())
         scores: Dict[str, float] = {p: 0.0 for p in platforms}
         explain_map: Dict[str, List[str]] = {p: [] for p in platforms}
-        
+
         # ===== TIER 1: HARD EVIDENCE (Weight: 1.0x) =====
         # PCI vendor/device IDs, CPUID signatures, MAC prefixes - extremely hard to spoof
-        
+
         # Hard vendor matches from primary table
         for vm, vids in VM_PCI_VENDORS.items():
             for vid in vids:
                 if vid.upper().replace("0x", "") in (v.upper().replace("0x", "") for v in (art.pci_vendors or [])):
                     scores[vm] += 60 * 1.0
                     explain_map[vm].append(f"[T1-HARD] PCI vendor {vid}")
-        
+
         # Expanded vendor/device table
         for vm, table in VM_PCI_SIGNATURES.items():
             for v in (art.pci_vendors or []):
@@ -1093,58 +1102,77 @@ class Detector:
                     scores.setdefault(vm, 0.0)
                     scores[vm] += 20 * 1.0
                     explain_map.setdefault(vm, []).append(f"[T1-HARD] Device {d_clean}")
-        
+
         # CPUID hypervisor signature (direct CPUID access preferred)
         if art.cpuid_signature:
             for vm, sig in VM_CPUID_SIGS.items():
                 if sig.lower() in (art.cpuid_signature or "").lower():
-                    scores.setdefault(vm, 0.0)
-                    scores[vm] += 40 * 1.0
-                    explain_map.setdefault(vm, []).append(f"[T1-HARD] CPUID '{sig}'")
-        
+                    scores[vm] = scores.get(vm, 0.0) + 40 * 1.0
+                    explain_map[vm] = explain_map.get(vm, []) + [f"[T1-HARD] CPUID '{sig}'"]
+
         # Direct CPUID leaf 0 vendor check (unforgeable if direct mode)
         if art.direct_cpuid_available and art.cpuid_leaf_0:
             leaf0 = art.cpuid_leaf_0
             vendor_bytes = (leaf0[1]).to_bytes(4, 'little') + \
-                          (leaf0[3]).to_bytes(4, 'little') + \
-                          (leaf0[2]).to_bytes(4, 'little')
-            vendor_str = vendor_bytes.decode('ascii', errors='ignore').rstrip('\x00')
-            if "qemu" in vendor_str.lower() or "kvm" in vendor_str.lower():
-                scores["QEMU/KVM"] += 35 * 1.0
-                explain_map["QEMU/KVM"].append(f"[T1-DIRECT] CPUID vendor '{vendor_str}'")
-            elif "microsoft" in vendor_str.lower():
-                scores["Hyper-V"] += 35 * 1.0
-                explain_map["Hyper-V"].append(f"[T1-DIRECT] CPUID vendor '{vendor_str}'")
-        
+                        (leaf0[3]).to_bytes(4, 'little') + \
+                        (leaf0[2]).to_bytes(4, 'little')
+            vendor_str = vendor_bytes.decode('ascii', errors='ignore').rstrip('\x00').lower()
+
+            # Comprehensive vendor string matching for ALL hypervisors (NOT just KVM/Hyper-V!)
+            hypervisor_mappings = {
+                "qemu": "QEMU/KVM",
+                "kvm": "QEMU/KVM",
+                "microsoft hv": "Hyper-V",
+                "vmware": "VMware",
+                "virtualbox": "VirtualBox",
+                "oracle": "VirtualBox",
+                "xenvmm": "Xen",
+                "tcgtcgtcg": "QEMU/TCG",
+                "prlvmm": "Parallels",
+            }
+
+            matches_found = []
+            for partial_match, target_vm in hypervisor_mappings.items():
+                if partial_match in vendor_str:
+                    scores[target_vm] = scores.get(target_vm, 0.0) + 35 * 1.0
+                    matches_found.append((partial_match, target_vm))
+                    explain_map.setdefault(target_vm, []).append(f"[T1-DIRECT] CPUID vendor '{vendor_str}' → {target_vm}")
+
+            if matches_found:
+                art.notes.append(f"[CPUID] Found {len(matches_found)} vendor match(es): {matches_found}")
+            else:
+                # Unknown vendor detected - log for analysis but don't penalize
+                art.notes.append(f"[CPUID] Unknown vendor string: '{vendor_str}'")
+
         # ACPI signatures (hard to fake without kernel-level changes)
         for sig in (art.acpi_signatures or []):
             for vm in platforms:
                 if vm.lower().split("/")[0] in sig.lower():
                     scores[vm] += 15 * 1.0
                     explain_map.setdefault(vm, []).append(f"[T1-HARD] ACPI sig {sig}")
-        
+
         # MAC OUI prefix match (burned into virtual NIC config, rarely spoofed consistently)
         for vm, prefs in MAC_PREFIXES.items():
             for pref in prefs:
-                if any(pref.upper() in (m.upper() for m in (art.mac_prefixes or []))):
+                if any(pref.upper() in m.upper() for m in (art.mac_prefixes or [])):
                     scores[vm] += 10 * 1.0
                     explain_map.setdefault(vm, []).append("[T1-HARD] MAC prefix")
                     break
-        
+
         # ===== TIER 2: MEDIUM CONFIDENCE (Weight: 0.6x) =====
         # BIOS strings, disk vendors, process names, GPU info - moderately spoofable
-        
+
         # BIOS keywords
         for vm, kv in VM_SOFT_KEYWORDS.items():
             for kw in kv.get("bios", []):
                 if art.bios_vendor and kw.lower() in art.bios_vendor.lower():
                     scores[vm] += 20 * 0.6
                     explain_map.setdefault(vm, []).append(f"[T2-MED] BIOS contains '{kw}'")
-        
+
         if art.bios_brand and art.bios_brand in scores:
             scores[art.bios_brand] += 25 * 0.6
             explain_map.setdefault(art.bios_brand, []).append("[T2-MED] Normalized BIOS brand")
-        
+
         # Disk vendor indicators
         for dv in (art.disk_vendors or []):
             dvl = dv.lower()
@@ -1154,14 +1182,14 @@ class Detector:
                         scores[vm] += 15 * 0.6
                         explain_map.setdefault(vm, []).append(f"[T2-MED] Disk vendor '{dv}'")
                         break
-        
+
         # Processes running
         for vm, kv in VM_SOFT_KEYWORDS.items():
             for pk in kv.get("process", []):
                 if any(pk.lower() in p.lower() for p in art.processes):
                     scores[vm] += 15 * 0.6
                     explain_map.setdefault(vm, []).append(f"[T2-MED] Process '{pk}' present")
-        
+
         # System product string matching
         if platform.system() == "Windows" and art.system_product:
             mfg = (art.system_product or "").lower()
@@ -1177,22 +1205,38 @@ class Detector:
             elif "microsoft" in mfg:
                 scores["Hyper-V"] += 50 * 0.6
                 explain_map.setdefault("Hyper-V", []).append("[T2-MED] System->Microsoft/Hyper-V")
-        
+
         # Virtualized GPU detected
         if art.gpu_info.get("vm_gpu"):
             for vm in ["VirtualBox", "VMware", "QEMU/KVM"]:
                 scores[vm] += 20 * 0.6
                 explain_map.setdefault(vm, []).append("[T2-MED] Virtual GPU detected")
-        
+
         # ===== TIER 3: SOFT HEURISTICS (Weight: 0.3x) =====
         # Timing patterns, memory sizing, uptime quirks - easiest to manipulate
-        
+
+        if art.entropy_behavior.get("low_variance"):
+            # Distribute minimal consistent weight across ALL hypervisor types
+            # Each gets only 0.3-0.6 points total to prevent false positive dominance
+            for vm in ["QEMU/KVM", "VirtualBox", "VMware", "Hyper-V", "Xen", "Parallels"]:
+                if not explain_map.get(vm):  # Only add once to first VM checked
+                    explain_map[vm].append("[T3-WEAK] Low entropy variance (very minor)")
+                scores[vm] += 2 * 0.15  # Extremely low weight = 0.3 pts per VM type
+
+            # Add diagnostic note about actual values
+            eb = art.entropy_behavior
+            variance_ns = eb.get("variance_ns", 0)
+            median_ns = eb.get("median_ns", 0)
+            ratio = eb.get("variance_ratio", 0)
+            if variance_ns > 200000:  # Even moderate variance worth noting
+                art.notes.append(f"[DIAG] Entropy variance {variance_ns:,}ns (median {median_ns:,}ns)")
+
         # Hypervisor flag presence
         if art.hypervisor_flag:
             for vm in scores:
                 scores[vm] += 10 * 0.3
                 explain_map.setdefault(vm, []).append("[T3-SOFT] Hypervisor flag present")
-        
+
         # Container runtime detected
         if art.container_runtime:
             # Containers aren't VMs per se but are isolated environments
@@ -1200,39 +1244,39 @@ class Detector:
             explain_map.setdefault("_CONTAINER_", []).append(
                 f"[INFO] Running in container: {art.container_runtime}"
             )
-        
+
         # Cloud provider detected
         if art.cloud_provider:
             scores[f"_CLOUD_{art.cloud_provider}_"] = 70
             explain_map.setdefault(f"_CLOUD_{art.cloud_provider}_", []).append(
                 f"[INFO] Detected cloud infrastructure: {art.cloud_provider}"
             )
-        
+
         # Suspicious CPU topology ratio
         if art.cpu_topology.get("suspicious_ratio"):
             for vm in scores:
                 scores[vm] += 15 * 0.3
                 explain_map.setdefault(vm, []).append("[T3-SOFT] Thread/core ratio suspicious")
-        
+
         # Odd thread count
         if art.cpu_topology.get("odd_thread_count"):
             for vm in scores:
                 scores[vm] += 12 * 0.3
                 explain_map.setdefault(vm, []).append("[T3-SOFT] Odd thread count")
-        
+
         # Rounded RAM size (typical VM defaults)
         if "rounded_ram_size:" in str(art.hardware_quirks):
             for vm in scores:
                 scores[vm] += 10 * 0.3
                 explain_map.setdefault(vm, []).append("[T3-SOFT] Standardized RAM allocation")
-        
+
         # Low USB device count
         for quirk in (art.hardware_quirks or []):
             if "low_usb_count" in quirk:
                 for vm in scores:
                     scores[vm] += 8 * 0.3
                     explain_map.setdefault(vm, []).append("[T3-SOFT] Minimal USB devices")
-        
+
         # Recent boot/uptime
         if art.uptime.get("suspiciously_recent"):
             for vm in scores:
@@ -1240,26 +1284,29 @@ class Detector:
                 explain_map.setdefault(vm, []).append(
                     "[T3-SOFT] Recent boot ({} hrs)".format(art.uptime.get("hours", 0))
                 )
-        
+
         # High instruction timing (possible VM exit overhead)
         if art.instruction_timing.get("suspicious_timing"):
             for vm in scores:
-                scores[vm] += 12 * 0.3
-                explain_map.setdefault(vm, []).append("[T3-SOFT] Instruction timing elevated")
-        
+                 if not explain_map.get(vm):
+                    explain_map[vm].append("[T3-WEAK] Instruction timing elevated (minor)")
+                 scores[vm] += 5 * 0.10  # Extremely reduced: 0.5 pts per VM type
+            it = art.instruction_timing
+            art.notes.append(f"[DIAG] Instruction timing: {it.get('batch_median_us'):.2f}μs/batch")
+
         # Interrupt jitter low (too consistent - VM scheduling behavior)
         if art.interrupt_behavior.get("low_jitter"):
             for vm in scores:
-                scores[vm] += 8 * 0.3
-                explain_map.setdefault(vm, []).append("[T3-SOFT] Low interrupt jitter")
-        
+                scores[vm] += 6 * 0.15
+                explain_map.setdefault(vm, []).append("[T3-WEAK] Elevated timing (considered)")
+
         # Dummy serial number / SMBIOS artifacts
         for quirk in (art.hardware_quirks or []):
             if "dummy_serial" in quirk:
                 for vm in scores:
                     scores[vm] += 6 * 0.3
                     explain_map.setdefault(vm, []).append("[T3-SOFT] Placeholder SMBIOS data")
-        
+
         # Nested virtualization indicators
         if art.nested_virtualization.get("likely_nested"):
             for vm in scores:
@@ -1269,11 +1316,11 @@ class Detector:
                         art.nested_virtualization.get("signal_count", 0)
                     )
                 )
-        
+
         # ===== CAP SCORES AND INTEGRATE SANDBOX DATA =====
         cap_pct = lambda s: max(0.0, min(100.0, s))
         scores = {k: cap_pct(v) for k, v in scores.items()}
-        
+
         # Apply sandbox penalty if heuristics detected
         if sandbox:
             if sandbox.get("detected"):
@@ -1285,50 +1332,52 @@ class Detector:
                         scores[k] = max(0, reduced)
                         if explained := explain_map.get(k, []):
                             explain_map[k].append(f"[PENALTY] Sandbox heuristics (-30)")
-                
+
                 # But add heuristic evidence separately
                 if sandbox.get("heuristics"):
                     scores["_SANDBOX_ENV_"] = len(sandbox.get("heuristics")) * 10
-                
+
                 if sandbox.get("debugger"):
                     for k in scores:
                         scores[k] -= 15
                         if k != "_SANDBOX_ENV_" and k != "_CONTAINER_" and not k.startswith("_CLOUD_"):
                             explain_map.setdefault(k, []).append("[DEBUGGER] Analysis tool attached")
-        
+
         # Convert floats back to ints
         scores_int = {k: int(round(v)) for k, v in scores.items()}
-        
+
         if explain:
             return {"scores": scores_int, "explain": explain_map}
         return {"scores": scores_int}
 
 
-    def detect(self, parallel: bool = True, 
+    def detect(self, parallel: bool = True,
                aggressive_sandbox: bool = False,
+               explain: bool = True,
                timeout_sec: float = 30.0) -> Dict[str, Any]:
         """
         Run full detection pipeline.
-        
+
         Args:
             parallel: Use multi-threaded gathering (recommended for speed)
             aggressive_sandbox: Exit early if sandbox detection triggers
+            explain: Mentions explanations about stuff when it find things.
             timeout_sec: Maximum execution time before forced abort
-            
+
         Returns:
             Detection results dictionary
         """
         start_time = time.perf_counter()
         behavior_signals: List[str] = []
         hardened_signals = 0
-        
+
         # Execute gathering phase with timeout protection
         try:
             if parallel:
                 art = self.gather_all_parallel(worker_threads=6)
             else:
                 art = self.gather_all_sequential()
-            
+
             elapsed = time.perf_counter() - start_time
             if elapsed > timeout_sec:
                 art.notes.append(f"WARNING: Gathering exceeded {timeout_sec}s timeout")
@@ -1338,20 +1387,20 @@ class Detector:
                 "partial_results": self.art.to_dict() if hasattr(self.art, 'to_dict') else {},
                 "recommendation": "Try again with parallel=False for simpler runs"
             }
-        
+
         # Run sandbox detection
         sandbox = sandbox_checks(art)
-        
+
         # Score everything
-        sc = self.score(art, sandbox=sandbox, explain=True)
+        sc = self.score(art, sandbox=sandbox, explain=explain)
         scores = sc["scores"]
         explain_map = sc.get("explain", {})
-        
+
         # Determine best guess
         non_special_scores = {k: v for k, v in scores.items() if not k.startswith("_")}
         best_vm = max(non_special_scores, key=lambda k: non_special_scores[k]) if non_special_scores else "Unknown"
         best_score = non_special_scores.get(best_vm, 0)
-        
+
         result: Dict[str, Any] = {
             "artifacts": art.to_dict(),
             "scores": scores,
@@ -1361,7 +1410,7 @@ class Detector:
             "scan_duration_ms": int((time.perf_counter() - start_time) * 1000),
         }
         result["explanation"] = explain_map
-        
+
         # Aggressive sandbox trigger
         if aggressive_sandbox and sandbox.get("detected"):
             result["aggressive_exit"] = True
@@ -1370,78 +1419,98 @@ class Detector:
                 "heuristics_count": len(sandbox.get("heuristics")),
                 "details": sandbox.get("heuristics", [])[:10]  # Limit output size
             }
-        
+
         # Behavioral signal aggregation for classification enhancement
         if art.interrupt_behavior.get("low_jitter"):
             hardened_signals += 1
             behavior_signals.append("Low interrupt jitter")
-        
-        if art.entropy_behavior.get("low_variance"):
-            hardened_signals += 1
-            behavior_signals.append("Low entropy variance")
-        
+
         if art.cpu_topology.get("suspicious_ratio"):
             hardened_signals += 1
             behavior_signals.append("CPU ratio suspicious (>6×)")
-        
+
         if art.container_runtime:
             hardened_signals += 1
             behavior_signals.append(f"Container environment: {art.container_runtime}")
-        
+
         if art.cloud_provider:
             hardened_signals += 1
             behavior_signals.append(f"Cloud infrastructure: {art.cloud_provider}")
-        
+
         if art.instruction_timing.get("suspicious_timing"):
             hardened_signals += 1
             behavior_signals.append("Elevated instruction latency")
-        
+
         # Enhanced behavioral scoring integration
         additional = enhanced_behavior_scoring(art, behavior_signals)
         hardened_signals += additional
-        
+
         # Classification decision tree
         has_special_class = any(k.startswith("_") for k in scores.keys())
         special_max = max([scores[k] for k in scores if k.startswith("_")] or [0])
-        
-        if has_special_class and special_max > 70:
-            # Container or cloud takes precedence over generic VM detection
+
+        classification = "Bare Metal / Unknown"
+
+        if has_special_class and special_max > 85:
             special_types = [k for k in scores if k.startswith("_")]
             best_special = max(special_types, key=lambda k: scores[k])
-            classification_map = {
-                "_CONTAINER_": "Container Environment",
-                "_SANDBOX_ENV_": "Analysis Sandboxed Environment",
-            }
-            for cloud in CLOUD_METADATA_ENDPOINTS.keys():
-                classification_map[f"_CLOUD_{cloud}_"] = f"Cloud Infrastructure ({cloud})"
-            
-            result["classification"] = classification_map.get(best_special, "Special Environment")
-            result["special_environment"] = best_special
-            result["conflicts_note"] = "Special environment classification overrides VM scoring"
-        elif best_score >= 80:
-            classification = "Confirmed VM Environment"
-        elif best_score >= 50:
-            classification = "Likely VM Environment"
-        elif best_score >= 30:
-            classification = "Possible VM Indicators"
-        elif hardened_signals >= 2:
-            classification = "Hardened/Stylized Virtual Environment"
-        elif best_score < 30 and art.direct_cpuid_available and art.hypervisor_flag:
-            classification = "Hidden VM (Direct CPUID Confirms)"
-        else:
-            classification = "Bare Metal / Unknown"
-        
+
+            # BLOCK automatic container override unless VERY CONFIDENT
+            if best_special == "_CONTAINER_":
+                # Require BOTH marker file AND either cgroup OR socket evidence
+                required_strength = (
+                    getattr(art, 'container_has_marker_file', False) and
+                    (getattr(art, 'container_cgroup_match', False) or getattr(art, 'docker_socket_found', False))
+                )
+
+                if not required_strength:
+                    # Weak container detection, ignore it and fall through to VM scoring
+                    has_special_class = False
+                    special_max = 0
+                    classification = "Bare Metal / Unknown"
+
+            if has_special_class:  # Still valid after filtering?
+                classification_map = {
+                    "_CONTAINER_": "Container Environment",
+                    "_SANDBOX_ENV_": "Analysis Sandboxed Environment",
+                }
+                for cloud in CLOUD_METADATA_ENDPOINTS.keys():
+                    classification_map[f"_CLOUD_{cloud}_"] = f"Cloud Infrastructure ({cloud})"
+
+                result["classification"] = classification_map.get(best_special, "Special Environment")
+                result["special_environment"] = best_special
+                result["conflicts_note"] = "Special environment classification overrides VM scoring"
+            else:
+                # Proceed to normal VM classification
+                pass
+
+
+
+        if not result.get("classification"):  # Not already set by special class
+            if best_score >= 80:
+                classification = "Confirmed VM Environment"
+            elif best_score >= 50:
+                classification = "Likely VM Environment"
+            elif best_score >= 30:
+                classification = "Possible VM Indicators"
+            elif best_score >= 10 and hardened_signals >= 2:  # ← ADDED BEST_SCORE CHECK (10% minimum)
+                classification = "Hardened/Stylized Virtual Environment"
+            elif best_score < 30 and art.direct_cpuid_available and art.hypervisor_flag:
+                classification = "Hidden VM (Direct CPUID Confirms)"
+            else:
+                classification = "Bare Metal / Unknown"  # Final catch-all
+
         result["classification"] = classification
         result["behavioral_signals"] = behavior_signals
         result["hardened_signal_count"] = hardened_signals
-        
+
         # Add warnings for edge cases
         if result["scan_duration_ms"] > 25000:
             result["warning_slow_scan"] = "Detection took longer than expected - possible analysis delay tactics"
-        
+
         if sandbox.get("timing_anomaly"):
             result["warning_timing_manipulation"] = "Timing anomalies suggest intentional sleep skipping"
-        
+
         return result
 
 
@@ -1465,24 +1534,24 @@ def sandbox_checks(art: ArtifactCollection) -> Dict[str, Any]:
         "timing_anomaly": False,
         "window_title_suspect": False,
     }
-    
+
     # Process-based indicators (expanded list)
     expanded_procs = SANDBOX_PROCS + [
-        "autoruns", "hiew", "peview", "importrec", "ollybg", 
+        "autoruns", "hiew", "peview", "importrec", "ollybg",
         "ida", "ghidra", "radare2", "objdump", "strace", "ltrace",
         "httpdebug", "charlesproxy", "burpsuite", "mitmproxy"
     ]
-    
+
     for p in art.processes or []:
         pl = p.lower()
         for sig in expanded_procs:
             if sig in pl:
                 out["process_hits"].append(p)
                 out["heuristics"].append(f"Sandbox process: {p}")
-    
+
     # Environment variable inspection
     suspicious_env_keys = [
-        "vbox", "virtualbox", "vmware", "cuckoo", "sandbox", "qemu", 
+        "vbox", "virtualbox", "vmware", "cuckoo", "sandbox", "qemu",
         "malware", "analysis", "debug", "hook", "inject"
     ]
     for k, v in os.environ.items():
@@ -1494,31 +1563,31 @@ def sandbox_checks(art: ArtifactCollection) -> Dict[str, Any]:
         if any(s in vv for s in suspicious_env_keys):
             out["env_hits"].append(f"{k}={v[:30]}...")
             out["heuristics"].append(f"Env value suspicious: {k}")
-    
+
     # Username / hostname heuristics (with whitelist for common test usernames)
     whitelisted_users = ["admin", "testuser", "developer", "root", "ubuntu", "ec2-user"]
     whitelisted_hosts = ["localhost", "workstation", "desktop"]
-    
+
     try:
         import getpass, socket
         user = getpass.getuser().lower()
         host = socket.gethostname().lower()
-        
+
         bad_user_keywords = ["sandbox", "analysis", "maltest", "cuckoo", "victim", "honeypot"]
         bad_host_keywords = ["malware", "analysis", "threat", "incident"]
-        
+
         for bad in bad_user_keywords:
             if bad in user and user not in whitelisted_users:
                 out["username_hits"].append(f"user={user}")
                 out["heuristics"].append(f"Suspicious username: {user}")
-        
+
         for bad in bad_host_keywords:
             if bad in host and host not in whitelisted_hosts:
                 out["hostname_hits"].append(f"host={host}")
                 out["heuristics"].append(f"Suspicious hostname: {host}")
     except Exception:
         pass
-    
+
     # Disk vendor forensic traces
     for dv in art.disk_vendors or []:
         dvl = dv.lower()
@@ -1527,20 +1596,20 @@ def sandbox_checks(art: ArtifactCollection) -> Dict[str, Any]:
                 if sub.lower() in dvl:
                     out["disk_hits"].append({"vendor": dv, "vm": vm})
                     out["heuristics"].append(f"Disk vendor indicates {vm}")
-    
+
     # Window title / UI inspection (Windows only)
     if platform.system() == "Windows":
         try:
             # Attempt to read foreground window title via PowerShell
             cmd = "powershell -NoProfile -Command '(Get-Process -Id $PID | Select-Object MainWindowTitle).'MainWindowTitle'"
-            title = run(["powershell", "-NoProfile", "-Command", 
+            title = run(["powershell", "-NoProfile", "-Command",
                          "[Console]::TreatControlCAsInput;$host.UI.RawUI.WindowTitle"]).strip()
             if "virtual" in title.lower() or "vmware" in title.lower() or "oracle" in title.lower():
                 out["window_title_suspect"] = True
                 out["heuristics"].append(f"Window title suggests VM: {title[:50]}")
         except Exception:
             pass
-    
+
     # AC anomaly detection
     try:
         if art.system_product:
@@ -1552,20 +1621,20 @@ def sandbox_checks(art: ArtifactCollection) -> Dict[str, Any]:
                     out["system_hits"].append("missing_supporting_evidence")
     except Exception:
         pass
-    
+
     # Low-resource environment flags
     try:
         if psutil:
             mem = psutil.virtual_memory().total
             cpus_logical = psutil.cpu_count(logical=True)
             cpus_physical = psutil.cpu_count(logical=False) or 1
-            
+
             # Very low specs suggest analysis sandbox
             if mem and mem < 2_000_000_000:  # <2GB RAM
                 out["heuristics"].append(f"Low memory total: {mem // (1024**2)} MB")
             if cpus_logical and cpus_logical <= 2:
                 out["heuristics"].append(f"Limited cores: {cpus_logical} logical")
-            
+
             # Single NIC might indicate controlled environment
             net_ifaces = len(psutil.net_if_addrs())
             if net_ifaces <= 2:
@@ -1576,13 +1645,13 @@ def sandbox_checks(art: ArtifactCollection) -> Dict[str, Any]:
                 out["heuristics"].append(f"Single processor detected: {cpus}")
     except Exception:
         pass
-    
+
     # Debugger attachment checks
     if hasattr(sys, "gettrace") and sys.gettrace():
         out["debugger"] = True
         out["tracing_active"] = True
         out["heuristics"].append("Python tracer/debugger active")
-    
+
     # Check for remote debugging ports
     if platform.system() == "Linux":
         try:
@@ -1597,7 +1666,7 @@ def sandbox_checks(art: ArtifactCollection) -> Dict[str, Any]:
                         out["heuristics"].append(f"Debugging port open: {port}")
         except Exception:
             pass
-    
+
     # Sleep timing validation
     try:
         test_sleep_times = [0.050, 0.100, 0.150, 0.200]
@@ -1605,7 +1674,7 @@ def sandbox_checks(art: ArtifactCollection) -> Dict[str, Any]:
             start = time.perf_counter()
             time.sleep(target)
             actual = time.perf_counter() - start
-            
+
             # Allowing generous tolerance for slow systems
             if actual < target * 0.7:  # Less than 70% of requested time
                 out["timing_anomaly"] = True
@@ -1613,15 +1682,15 @@ def sandbox_checks(art: ArtifactCollection) -> Dict[str, Any]:
                 break
     except Exception:
         pass
-    
+
     # Final aggregated decision
-    hits = (len(out["heuristics"]) + len(out["process_hits"]) + 
+    hits = (len(out["heuristics"]) + len(out["process_hits"]) +
             len(out["env_hits"]) + len(out["disk_hits"]) + len(out["system_hits"]))
-    
+
     # Trigger detection if debugger/timing anomalies OR multiple heuristics
     if out["debugger"] or out["timing_anomaly"] or hits >= 3:
         out["detected"] = True
-    
+
     # Confidence level
     if out["detected"]:
         if hits >= 10 or out["debugger"]:
@@ -1630,7 +1699,7 @@ def sandbox_checks(art: ArtifactCollection) -> Dict[str, Any]:
             out["confidence"] = "MEDIUM"
         else:
             out["confidence"] = "LOW"
-    
+
     return out
 
 
@@ -1688,18 +1757,18 @@ def gather_memory_patterns(art: ArtifactCollection) -> None:
         if psutil:
             mem = psutil.virtual_memory()
             swap = psutil.swap_memory()
-            
+
             total_gb = mem.total / (1024**3)
             available_mb = mem.available / (1024**2)
-            
+
             # Check for exact power-of-two allocations (common in VM configs)
             power_of_two_gb = [1, 2, 4, 8, 16, 32, 64, 128, 256]
             closest = min(power_of_two_gb, key=lambda x: abs(total_gb - x))
             is_power_of_two = abs(total_gb - closest) < 0.5
-            
+
             # Typical VM page sizes
             large_pages = [4096, 2048*1024, 1024*1024*1024]  # 4KB, 2MB, 1GB
-            
+
             art.memory_patterns = {
                 "total_gb": round(total_gb, 2),
                 "power_of_two_allocation": is_power_of_two,
@@ -1728,46 +1797,6 @@ __all__ = [
 
 
 # ============================================================
-# Compilation Instructions (Save as separate .c file)
-# ============================================================
-"""
-COMPILATION INSTRUCTIONS FOR DIRECT CPUID ACCESS
-
-To enable unforgeable CPUID-based hypervisor detection, compile this C helper:
-
-=== cpuid.c ===
-#include <stdint.h>
-
-#ifdef _WIN32
-    __declspec(dllexport) void cpuid(uint32_t eax, uint32_t ecx, uint32_t* out) {
-        __cpuidex((int*)out, eax, ecx);
-    }
-#else
-    __attribute__((visibility("default")))
-    void cpuid(uint32_t eax, uint32_t ecx, uint32_t* out) {
-        __asm__ volatile("cpuid"
-            : "=a"(out[0]), "=b"(out[1]), "=c"(out[2]), "=d"(out[3])
-            : "a"(eax), "c"(ecx));
-    }
-#endif
-
-=== Linux Build ===
-gcc -shared -fPIC -O2 cpuid.c -o libcpuid.so
-
-=== Windows Build (MinGW) ===
-gcc -shared -O2 cpuid.c -o cpuid.dll
-
-=== After compilation ===
-1. Place the .so/.dll next to your Python script
-2. The module will auto-detect and load it
-3. Fallback occurs gracefully if not found
-
-Without this library, CPUID detection operates in INDIRECT MODE (parse lscpu/output)
-which can be spoofed by advanced evaders.
-"""
-
-
-# ============================================================
 # Demo Usage (Run as standalone)
 # ============================================================
 if __name__ == "__main__":
@@ -1775,26 +1804,26 @@ if __name__ == "__main__":
     print("VM DETECTION ENGINE v2.0 - Educational Research Tool")
     print("=" * 60)
     print(f"\nStarting scan... (This may take 5-30 seconds)\n")
-    
+
     detector = Detector()
-    
+
     # Full diagnostic scan with detailed explanation
     result = detector.detect(parallel=True, aggressive_sandbox=False, explain=True)
-    
+
     print("\n" + "=" * 60)
     print("DETECTION RESULTS")
     print("=" * 60)
-    
+
     print(f"\nClassification: {result['classification']}")
     print(f"Confidence Score: {result['confidence']}%")
     print(f"Best Guess: {result['best_guess']}")
     print(f"Scan Duration: {result['scan_duration_ms']}ms")
-    
+
     if result.get("behavioral_signals"):
         print(f"\nBehavioral Signals ({len(result['behavioral_signals'])}):")
         for i, signal in enumerate(result['behavioral_signals'], 1):
             print(f"  {i}. {signal}")
-    
+
     print("\n--- Score Breakdown ---")
     for env_type, score in sorted(result['scores'].items(), key=lambda x: -x[1]):
         if score > 0:
@@ -1803,13 +1832,13 @@ if __name__ == "__main__":
             if result.get('explanation', {}).get(env_type):
                 for hint in result['explanation'][env_type][:3]:
                     print(f"      └─ {hint}")
-    
+
     if result.get("anti_analysis", {}).get("detected"):
         print("\n⚠️  ANTI-ANALYSIS ENVIRONMENT DETECTED!")
         au = result["anti_analysis"]
         print(f"   Confidence: {au.get('confidence')}")
         print(f"   Hits: {len(au.get('heuristics'), [])}")
-    
+
     print("\n" + "=" * 60)
     print("Export JSON: Import Detector, call .detect(explain=True).to_json()")
     print("=" * 60)
