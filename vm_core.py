@@ -563,6 +563,7 @@ def gather_bios_system(art: ArtifactCollection) -> None:
         # Step 1: Try privileged dmidecode
         if shutil_which("dmidecode"):
             cmd_prepend = ["sudo", "-n"] if not is_root else []
+            dmi_source_used = None
             man = run(cmd_prepend + ["dmidecode", "-s", "system-manufacturer"])
             prod = run(cmd_prepend + ["dmidecode", "-s", "system-product-name"])
 
@@ -570,18 +571,25 @@ def gather_bios_system(art: ArtifactCollection) -> None:
             if man.strip():
                 art.bios_vendor = man.strip()
                 found_via_sudo = True
+                dmi_source_used = "dmidecode" + ("-sudo" if not is_root else "-root")
             if prod.strip():
                 art.system_product = prod.strip()
                 found_via_sudo = True
+                dmi_source_used = "dmidecode" + ("-sudo" if not is_root else "-root")
 
-            # Step 2: If sudo failed/is unavailable, fallback to sysfs
             if not found_via_sudo:
                 read_dmi_from_sysfs(art)
+                dmi_source_used = "sysfs_fallback"
                 if not art.bios_vendor and not art.system_product:
                     art.notes.append("ℹ Running without root + sudo unavailable")
+
+            if dmi_source_used:
+                art.notes.append(f"[DMI_SOURCE] {dmi_source_used}")
+
         else:
             # Tool missing? Straight to sysfs
             read_dmi_from_sysfs(art)
+            art.notes.append("[DMI_SOURCE] sysfs_no_dmidecode")
 
     elif system == "Windows":
         out = run(["wmic", "bios", "get", "Manufacturer", "/value"])
@@ -738,7 +746,7 @@ def gather_container_detection(art: ArtifactCollection) -> None:
         art.container_cgroup_match = cgroup_matches
         if docker_socket_exists:
             art.docker_socket_found = True
-            art.notes.append("DOCKER_SOCKET_DETECTED_NO_DOCKERENV")
+            art.notes.append("[DOCKER_SOCKET] No_Docker_ENV")
         runtime = None
 
     art.container_runtime = runtime
@@ -1181,7 +1189,7 @@ class Detector:
                 art.notes.append(f"[CPUID] Found {len(matches_found)} vendor match(es): {matches_found}")
             else:
                 # Unknown vendor detected - log for analysis but don't penalize
-                art.notes.append(f"[CPUID] Unknown vendor string: '{vendor_str}'")
+                art.notes.append(f"[CPUID] Unknown/Legit vendor string: '{vendor_str}'")
 
         # ACPI signatures (hard to fake without kernel-level changes)
         for sig in (art.acpi_signatures or []):
