@@ -46,6 +46,7 @@ ICON_CPU = "⚙"
 ICON_DISK = "💾"
 ICON_NETWORK = "🌐"
 ICON_PROCESS = "⚡"
+ICON_NOTE = "📝"
 
 def print_box(title, content=None, color=Colors.OKBLUE):
     """We print our content in a nice pretty box"""
@@ -77,6 +78,13 @@ def format_confidence_bar(confidence):
 
 def format_artifact_summary(art: dict) -> str:
     lines = []
+
+    if art.get("notes") or artifacts.notes:  # Depends on how you access artifacts
+        print(f"\n{Colors.OKCYAN}{ICON_NOTE}Gatherer Notes:{Colors.ENDC}")
+        for note in art['notes']:
+            if isinstance(note, str):
+                print(f"  • {note}")
+        lines.append("")
 
     # CPU Info
     if art.get('cpu_vendor') or art.get('cpuid_signature'):
@@ -282,7 +290,7 @@ def main():
     # Explanation map if requested
     if args.explain:
         print_box("DETECTION REASONING", color=Colors.OKCYAN)
-        explain = res.get("explain", {})
+        explain = res.get("explanation", {})
         for vm, reasons in explain.items():
             print(f"\n{Colors.BOLD}{vm}:{Colors.ENDC}")
             for r in reasons:
