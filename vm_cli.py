@@ -79,12 +79,12 @@ def format_confidence_bar(confidence):
 def format_artifact_summary(art: dict) -> str:
     lines = []
 
-    if art.get("notes") or artifacts.notes:  # Depends on how you access artifacts
-        print(f"\n{Colors.OKCYAN}{ICON_NOTE}Gatherer Notes:{Colors.ENDC}")
-        for note in art['notes']:
+    if art.get("notes"):
+        lines.append(f"{Colors.OKCYAN}{ICON_NOTE} Gatherer Notes:{Colors.ENDC}")
+        for note in art.get("notes", []):
             if isinstance(note, str):
-                print(f"  • {note}")
-        lines.append("")
+                lines.append(f"  • {note}")
+        lines.append("")  # Spacing after notes
 
     # CPU Info
     if art.get('cpu_vendor') or art.get('cpuid_signature'):
