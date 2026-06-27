@@ -1848,7 +1848,7 @@ __all__ = [
 # ============================================================
 if __name__ == "__main__":
     print("=" * 60)
-    print("VM DETECTION ENGINE v2.0 - Educational Research Tool")
+    print("VM DETECTION ENGINE v2.0 | Educational Research Tool")
     print("=" * 60)
     print(f"\nStarting scan... (This may take 5-30 seconds)\n")
 
