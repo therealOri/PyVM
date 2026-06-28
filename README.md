@@ -7,7 +7,7 @@
 *Hiding a VM should be harder than finding one.*
 
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12+-3776AB?logo=python&logoColor=white)](https://python.org)
-[![License](https://img.shields.io/badge/License-Educational-yellow)](#disclaimer)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPLv3-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20Windows-success)](#platform-support)
 [![Version](https://img.shields.io/badge/Version-2.0-blueviolet)](#changelog)
 
