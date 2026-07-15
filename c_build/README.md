@@ -59,6 +59,8 @@ gcc -shared -O2 cpuid.c -o cpuid.dll
 cl /LD /O2 cpuid.c /Fe:cpuid.dll
 ```
 __ __
+> TODO: Work on install script/stuff for windows options.
+
 
 <br>
 <br>
